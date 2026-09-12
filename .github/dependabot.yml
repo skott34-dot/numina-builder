@@ -1,0 +1,9 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    # Review release notes and exact upstream commits. Do not auto-merge or
+    # silently expand the accepted builder-SHA policy after an update.

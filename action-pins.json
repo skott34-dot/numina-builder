@@ -1,0 +1,14 @@
+{
+  "observed_date": "2026-09-12",
+  "verification_scope": "Official upstream release pages linked to full commits; action metadata read. No action execution, dependency audit or hosted build performed.",
+  "actions": [
+    {"repository":"actions/checkout","version":"v7.0.1","sha":"3d3c42e5aac5ba805825da76410c181273ba90b1","source":"https://github.com/actions/checkout/commit/3d3c42e5aac5ba805825da76410c181273ba90b1"},
+    {"repository":"actions/setup-node","version":"v7.0.0","sha":"820762786026740c76f36085b0efc47a31fe5020","source":"https://github.com/actions/setup-node/commit/820762786026740c76f36085b0efc47a31fe5020"},
+    {"repository":"actions/upload-artifact","version":"v7.0.1","sha":"043fb46d1a93c77aae656e7c1c64a875d1fc6a0a","source":"https://github.com/actions/upload-artifact/commit/043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"},
+    {"repository":"actions/download-artifact","version":"v8.0.1","sha":"3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c","source":"https://github.com/actions/download-artifact/commit/3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c"},
+    {"repository":"actions/attest","version":"v4.2.1","sha":"508db95dd578ae2727ebd6217d5ba78e4fbda05d","source":"https://github.com/actions/attest/commit/508db95dd578ae2727ebd6217d5ba78e4fbda05d"}
+  ],
+  "node": {"version":"24.21.0","source":"https://nodejs.org/download/release/latest-v24.x/SHASUMS256.txt","observed_linux_x64_tar_xz_sha256":"fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6","note":"Official published checksum observation only; binary not downloaded or executed here. setup-node selects the fixed version; this checksum is not an executed verification result."},
+  "builder_workflow_commit": null,
+  "hosted_run": null
+}
