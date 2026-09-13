@@ -1,0 +1,177 @@
+name: Numina rc26 verifier source package and provenance
+# Source packaging only. No caller inputs, deployment or private runtime keys.
+on:
+  workflow_call:
+permissions: {}
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      archive_id: ${{ steps.archive.outputs.artifact-id }}
+      inventory_id: ${{ steps.inventory.outputs.artifact-id }}
+    steps:
+      - name: Require the protected Numina source identity
+        shell: bash
+        env:
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          SOURCE_REPOSITORY_ID: ${{ github.repository_id }}
+          SOURCE_REF: ${{ github.ref }}
+          SOURCE_PROTECTED: ${{ github.ref_protected }}
+          SOURCE_EVENT: ${{ github.event_name }}
+          SOURCE_HOST: ${{ github.server_url }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_HOST" == 'https://github.com' ]]
+          [[ "$SOURCE_REPOSITORY" == 'skott34-dot/numina-production' ]]
+          [[ "$SOURCE_REPOSITORY_ID" == '1367647143' ]]
+          [[ "$SOURCE_REF" == 'refs/heads/main' ]]
+          [[ "$SOURCE_PROTECTED" == 'true' ]]
+          [[ "$SOURCE_EVENT" == 'workflow_dispatch' ]]
+      - name: Read the immutable triggering revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+          submodules: false
+          lfs: false
+      - name: Inspect and package the exact reconstructed source bytes
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
+          python3 -I - <<'PY'
+          import gzip, hashlib, io, json, os, pathlib, re, stat, subprocess, sys, tarfile
+          source = pathlib.Path('runtime/verifier-rc26')
+          output = pathlib.Path(os.environ['RUNNER_TEMP']) / 'rc26-verifier-artifacts'
+          output.mkdir()
+          paths = sorted(pathlib.Path(p) for p in subprocess.check_output(['git', 'ls-files', '-z', '--', str(source)]).decode().split('\0') if p)
+          if not 100 <= len(paths) <= 2000: raise SystemExit('Unexpected source inventory size')
+          files, python_files = {}, 0
+          allowed = {'.py','.txt','.md','.sha256','.toml','.yml','.yaml','.json','.css','.service'}
+          for path in paths:
+              if any(p.is_symlink() for p in (path, *path.parents)) or not stat.S_ISREG(path.lstat().st_mode) or path.suffix not in allowed:
+                  raise SystemExit('Source contains a link, special file or unreviewed file type')
+              relative = path.relative_to(source).as_posix()
+              if any(p.startswith('.') and p != '.github' for p in pathlib.PurePosixPath(relative).parts):
+                  raise SystemExit('Hidden source requires review')
+              data = path.read_bytes()
+              if len(data) > 5*1024**2 or b'-----BEGIN PRIVATE KEY-----' in data or b'-----BEGIN OPENSSH PRIVATE KEY-----' in data:
+                  raise SystemExit('Oversized file or private key material')
+              if path.suffix == '.py':
+                  compile(data, relative, 'exec', dont_inherit=True)
+                  python_files += 1
+              files[relative] = data
+          if sum(map(len, files.values())) > 32*1024**2: raise SystemExit('Source package too large')
+          def manifest(name):
+              result = []
+              for line in files[name].decode().splitlines():
+                  if not line.strip(): continue
+                  expected, relative = line.split(None, 1)
+                  if not re.fullmatch(r'[0-9a-f]{64}', expected): raise SystemExit('Invalid recorded digest')
+                  result.append((relative.strip().removeprefix('./'), expected))
+              return result
+          frozen = manifest('FROZEN-CORE-v1.8.sha256')
+          frozen_root = hashlib.sha256('\n'.join(f'{digest} {name}' for name, digest in sorted(frozen)).encode()).hexdigest()
+          if len(frozen) != 105 or frozen_root != '5852f48baa66036cbac5351f3df4805c8e3a103ce014a4508a9e7d3d6eba5b67':
+              raise SystemExit('Frozen core identity changed')
+          for name, expected in frozen:
+              if name not in files or hashlib.sha256(files[name]).hexdigest() != expected:
+                  raise SystemExit('Frozen core byte mismatch: ' + name)
+          # The recovered manifest is preserved as historical input, not a valid current inventory.
+          differences = []
+          for name, expected in manifest('MANIFEST.production.sha256'):
+              actual = hashlib.sha256(files[name]).hexdigest() if name in files else None
+              if actual != expected:
+                  differences.append({'path':name,'expected_sha256':expected,'actual_sha256':actual})
+          records = [{'path':name,'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()} for name,data in sorted(files.items())]
+          archive_path = output / 'numina-rc26-verifier-source.tar.gz'
+          with archive_path.open('xb') as raw, gzip.GzipFile(filename='', fileobj=raw, mode='wb', mtime=0) as compressed:
+              with tarfile.open(fileobj=compressed, mode='w', format=tarfile.PAX_FORMAT) as archive:
+                  for name, data in sorted(files.items()):
+                      item = tarfile.TarInfo('numina-rc26-verifier/' + name)
+                      item.size, item.mode, item.mtime, item.uid, item.gid = len(data), 0o644, 0, 0, 0
+                      item.uname = item.gname = ''
+                      archive.addfile(item, io.BytesIO(data))
+          inventory = {
+              'schema':'numina.rc26.verifier-source-build.v1',
+              'artifact_kind':'reconstructed_python_source_archive',
+              'source_repository':'skott34-dot/numina-production',
+              'source_commit':os.environ['SOURCE_SHA'],'source_ref':'refs/heads/main',
+              'source_directory':source.as_posix(),
+              'run_id':int(os.environ['RUN_ID']),'run_attempt':int(os.environ['RUN_ATTEMPT']),
+              'archive':{'name':archive_path.name,'bytes':archive_path.stat().st_size,'sha256':hashlib.sha256(archive_path.read_bytes()).hexdigest()},
+              'files':records,
+              'checks':{'frozen_core_files':len(frozen),'frozen_core_root':frozen_root,'frozen_core_valid':True,'python_syntax_files':python_files,'python_syntax_valid':True},
+              'recovered_production_manifest':{'matches_this_package':not differences,'differences':differences},
+              'builder_scope':{'source_packaged':True,'source_imported_or_executed':False,'dependencies_installed':False,'tests_run':False,'production_readiness_evaluated':False,'deployment_performed':False},
+              'python_version':sys.version,'slsa_level_claimed':None,
+          }
+          (output / 'numina-rc26-verifier-inventory.json').write_text(json.dumps(inventory, sort_keys=True, indent=2)+'\n',encoding='utf-8')
+          PY
+      - name: Retain archive
+        id: archive
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          path: ${{ runner.temp }}/rc26-verifier-artifacts/numina-rc26-verifier-source.tar.gz
+          archive: false
+          if-no-files-found: error
+          overwrite: false
+          retention-days: 30
+      - name: Retain inventory
+        id: inventory
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          path: ${{ runner.temp }}/rc26-verifier-artifacts/numina-rc26-verifier-inventory.json
+          archive: false
+          if-no-files-found: error
+          overwrite: false
+          retention-days: 30
+
+  attest:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: numina-provenance
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      # No source checkout, extraction, source execution or application secrets.
+      - name: Receive archive from the same build
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.build.outputs.archive_id }}
+          path: ${{ runner.temp }}/archive
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Receive inventory from the same build
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ needs.build.outputs.inventory_id }}
+          path: ${{ runner.temp }}/inventory
+          skip-decompress: true
+          digest-mismatch: error
+      - name: Sign platform-generated provenance for both exact subjects
+        id: sign
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d
+        with:
+          subject-path: |
+            ${{ runner.temp }}/archive/numina-rc26-verifier-source.tar.gz
+            ${{ runner.temp }}/inventory/numina-rc26-verifier-inventory.json
+      - name: Retain the detached Sigstore bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: numina-rc26-verifier-provenance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.sign.outputs.bundle-path }}
+          if-no-files-found: error
+          overwrite: false
+          retention-days: 30
