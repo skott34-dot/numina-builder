@@ -84,7 +84,7 @@ def main():
     require(policy["predicate_type"] == "https://slsa.dev/provenance/v1", "Unexpected predicate policy")
     require(policy["oidc_issuer"] == "https://token.actions.githubusercontent.com", "Unexpected issuer")
     require(policy["deny_self_hosted_runners"] is True, "Hosted-runner requirement disabled")
-    require(policy["application_version"] == "2.0.0", "This gate is scoped to Site 2.0.0")
+    require(policy["application_version"] == "3.0.0", "This gate is scoped to Site 3.0.0")
     actual_digest = digest_file(artifact)
     require(actual_digest == policy["artifact_sha256"], "Deployment archive digest does not match approval")
 
@@ -106,7 +106,7 @@ def main():
     require(hosted_artifact.get("expired") is False, "Hosted artifact expired")
     require(hosted_artifact.get("workflow_run", {}).get("id") == policy["run_id"], "Artifact belongs to another run")
     require(hosted_artifact.get("workflow_run", {}).get("head_sha") == policy["source_sha"], "Artifact source mismatch")
-    require(hosted_artifact.get("name") == "numina-site-v2.0.0.tar.gz", "Unexpected artifact name")
+    require(hosted_artifact.get("name") == "numina-site-v3.0.0.tar.gz", "Unexpected artifact name")
     # The workflow uploads archive:false, so this service digest covers the raw
     # deployment archive, not an extra GitHub-generated ZIP wrapper.
     require(hosted_artifact.get("digest") == "sha256:" + actual_digest, "Hosted artifact digest mismatch")
@@ -132,20 +132,20 @@ def main():
     require(matching, "Signed provenance is not from the approved run attempt")
 
     files = archive_inventory(artifact)
-    manifest_name = "client/downloads/application-release-v2.json"
-    legacy_manifest_name = "client/downloads/release.json"
+    manifest_name = "client/downloads/application-release-v3.json"
+    manifest_aliases = {manifest_name, "client/downloads/application-release-v2.json", "client/downloads/release.json"}
     manifest_bytes = files[manifest_name]["bytes"]
     inventory_digest = sha(manifest_bytes)
     require(inventory_digest == policy["application_inventory_sha256"], "Application inventory digest differs from approval")
     require(any(any(subject.get("digest", {}).get("sha256") == inventory_digest
                     for subject in item["verificationResult"]["statement"].get("subject", []))
                 for item in matching), "Verified statement does not also sign this exact inventory")
-    require(manifest_bytes == files[legacy_manifest_name]["bytes"], "Release manifests disagree")
+    require(all(manifest_bytes == files[name]["bytes"] for name in manifest_aliases), "Release manifests disagree")
     manifest = json.loads(manifest_bytes)
     require(manifest.get("schema") == "numina.application-release.v2" and manifest.get("schema_version") == 2, "Unsupported manifest")
-    require(manifest.get("version") == "2.0.0" and manifest.get("release") == "numina-v2.0.0", "Release version mismatch")
+    require(manifest.get("version") == "3.0.0" and manifest.get("release") == "numina-v3.0.0", "Release version mismatch")
     measured = [{"path": name, "sha256": record["sha256"]} for name, record in sorted(files.items())
-                if name not in {manifest_name, legacy_manifest_name}]
+                if name not in manifest_aliases]
     require(measured == manifest.get("artifacts"), "Manifest does not cover exactly the archive files")
     tree_digest = sha("".join(row["sha256"] + "  " + row["path"] + "\n" for row in measured).encode())
     require(tree_digest == manifest.get("build_id") == policy["application_build_id"], "Application artifact tree mismatch")
