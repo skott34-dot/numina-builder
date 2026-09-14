@@ -162,7 +162,7 @@ jobs:
           digest-mismatch: error
       - name: Sign platform-generated provenance for both exact subjects
         id: sign
-        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
           subject-path: |
             ${{ runner.temp }}/archive/numina-rc26-verifier-source.tar.gz
