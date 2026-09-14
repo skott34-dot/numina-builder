@@ -1,4 +1,4 @@
-name: Numina Site 2.0 trusted build and provenance
+name: Numina Site 3.0 trusted build and provenance
 
 # Numina owner-governed builder. Source and signer identities are pinned by the release verifier.
 # No caller-supplied commands, source refs, artifact paths, runner labels or secrets.
@@ -69,16 +69,16 @@ jobs:
           [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
           # Current Site has no npm dependencies. Dependency additions require a
           # reviewed workflow/lockfile change; no implicit install or lifecycle hooks.
-          node --input-type=module -e 'import fs from "node:fs"; const p=JSON.parse(fs.readFileSync("package.json")); if(p.version!=="2.0.0" || ["dependencies","devDependencies","optionalDependencies"].some(k=>Object.keys(p[k]||{}).length)) throw Error("Build policy needs review"); fs.rmSync("dist",{recursive:true,force:true});'
+          node --input-type=module -e 'import fs from "node:fs"; const p=JSON.parse(fs.readFileSync("package.json")); if(p.version!=="3.0.0" || ["dependencies","devDependencies","optionalDependencies"].some(k=>Object.keys(p[k]||{}).length)) throw Error("Build policy needs review"); fs.rmSync("dist",{recursive:true,force:true});'
           node scripts/build.mjs
-          node scripts/package.mjs "$RUNNER_TEMP/numina-site-v2.0.0.tar.gz"
+          node scripts/package.mjs "$RUNNER_TEMP/numina-site-v3.0.0.tar.gz"
           # No tests are run by this workflow. A copied conformance fixture is
           # historical input, never evidence that this hosted build ran tests.
       - name: Store the exact deployment archive as one immutable artifact
         id: upload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          path: ${{ runner.temp }}/numina-site-v2.0.0.tar.gz
+          path: ${{ runner.temp }}/numina-site-v3.0.0.tar.gz
           archive: false
           if-no-files-found: error
           overwrite: false
@@ -87,7 +87,7 @@ jobs:
         id: upload_inventory
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          path: dist/client/downloads/application-release-v2.json
+          path: dist/client/downloads/application-release-v3.json
           archive: false
           if-no-files-found: error
           overwrite: false
@@ -128,7 +128,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          artifact="$RUNNER_TEMP/incoming/numina-site-v2.0.0.tar.gz"
+          artifact="$RUNNER_TEMP/incoming/numina-site-v3.0.0.tar.gz"
           [[ -f "$artifact" && ! -L "$artifact" ]]
           digest="$(sha256sum -- "$artifact" | cut -d ' ' -f 1)"
           [[ "$digest" =~ ^[0-9a-f]{64}$ ]]
@@ -138,8 +138,8 @@ jobs:
         uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
         with:
           subject-path: |
-            ${{ runner.temp }}/incoming/numina-site-v2.0.0.tar.gz
-            ${{ runner.temp }}/inventory/application-release-v2.json
+            ${{ runner.temp }}/incoming/numina-site-v3.0.0.tar.gz
+            ${{ runner.temp }}/inventory/application-release-v3.json
           # Use the action's generated SLSA predicate. Do not accept a predicate
           # supplied by source code or turn a runtime receipt into provenance.
       - name: Retain the actual Sigstore bundle
